@@ -1,0 +1,12 @@
+# created when it runs: your phone key, your settings, your project paths
+.env
+settings.json
+city-layout.json
+city-layout.json.tmp
+
+# local only
+.claude/
+dist/
+學生版提示詞.md
+.DS_Store
+node_modules/

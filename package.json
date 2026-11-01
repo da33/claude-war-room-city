@@ -1,0 +1,12 @@
+{
+  "name": "claude-war-room-city",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Claude 戰情城 — animated city of your Claude Code sessions",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "demo": "node server.js --demo"
+  }
+}

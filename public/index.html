@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#05080f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="戰情城">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<title>Claude 戰情城</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<style>
+  :root {
+    --bg: #05080f;
+    --panel: rgba(11, 16, 30, 0.78);
+    --line: rgba(120, 150, 210, 0.16);
+    --text: #e2e9ff;
+    --dim: #7c89a8;
+    --work: #ffb547;
+    --wait: #3fe0ff;
+    --idle: #5b6886;
+    --energy: #ffe066;
+    --hot: #ff5e5e;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas { position: fixed; inset: 0; cursor: grab; touch-action: none; }
+  canvas.drag { cursor: grabbing; }
+  #labels { pointer-events: none; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* top-left: brand + counters */
+  #hud-left { position: fixed; left: 16px; top: 14px; display: flex; align-items: center; gap: 16px; pointer-events: none; }
+  .brand { font-weight: 700; letter-spacing: 0.18em; font-size: 12px; color: #fff; display: flex; align-items: center; gap: 8px; }
+  .brand i { width: 9px; height: 9px; border-radius: 50%; background: var(--work); box-shadow: 0 0 10px var(--work); animation: beat 1.6s infinite; }
+  #clock { color: var(--dim); font-size: 12px; }
+  .counts { display: flex; gap: 12px; }
+  .counts span { display: flex; align-items: center; gap: 5px; font-weight: 600; font-size: 14px; }
+  .counts span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--c); box-shadow: 0 0 8px var(--c); }
+  #demo { font-size: 11px; letter-spacing: 0.1em; color: var(--wait); border: 1px solid currentColor; border-radius: 999px; padding: 1px 8px; }
+  #demo[hidden] { display: none; }
+  @keyframes beat { 50% { opacity: 0.35; } }
+
+  /* top-right: machine gauges */
+  #hud-right { position: fixed; right: 16px; top: 12px; display: flex; gap: 14px; align-items: center; pointer-events: none; }
+  .gauge { position: relative; width: 50px; height: 50px; }
+  .gauge svg { transform: rotate(-90deg); }
+  .gauge .v { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .gauge .k { position: absolute; left: 0; right: 0; bottom: -14px; text-align: center; font-size: 10px; color: var(--dim); letter-spacing: 0.1em; }
+  .bolt { text-align: right; }
+  .bolt b { display: block; font-size: 20px; color: var(--energy); text-shadow: 0 0 12px rgba(255, 224, 102, 0.45); }
+  .bolt span { font-size: 10px; color: var(--dim); letter-spacing: 0.1em; }
+
+  /* left: what is happening now */
+  #now { position: fixed; left: 16px; top: 60px; bottom: 92px; width: 286px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; scrollbar-width: none; }
+  #now::-webkit-scrollbar { display: none; }
+  .card {
+    --c: var(--wait); flex-shrink: 0;
+    background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--c);
+    border-radius: 10px; padding: 9px 11px 10px; cursor: pointer;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    transition: transform 0.15s, border-color 0.15s;
+  }
+  .card:hover, .card.hl { transform: translateX(3px); border-color: var(--c); }
+  .card.work { --c: var(--work); box-shadow: 0 0 22px -8px var(--work); }
+  .card .r1 { display: flex; align-items: center; gap: 7px; }
+  .card .ico { font-size: 14px; width: 18px; text-align: center; }
+  .card .nm { font-weight: 650; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .e { color: var(--energy); font-size: 11px; font-weight: 600; }
+  .card .step { margin: 4px 0 6px 25px; color: #c9d3ee; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card.wait .step { color: var(--dim); }
+  .card .pg { margin-left: 25px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); }
+  .segs { display: flex; gap: 2px; flex: 1; }
+  .segs i { height: 5px; flex: 1; border-radius: 2px; background: rgba(140, 160, 210, 0.18); }
+  .segs i.c { background: var(--c); }
+  .segs i.i { background: var(--c); animation: beat 1s infinite; }
+  .quiet { color: var(--dim); text-align: center; padding: 26px 0; font-size: 22px; }
+  .sec { margin: 8px 2px 0; font-size: 11px; color: var(--dim); letter-spacing: 0.1em; }
+  .irow {
+    display: grid; grid-template-columns: 7px 1fr 64px 30px; align-items: center; gap: 8px;
+    padding: 4px 10px; border-radius: 7px; cursor: pointer; font-size: 12px; color: #aab5d2;
+    background: rgba(11, 16, 30, 0.55); flex-shrink: 0;
+  }
+  .irow:hover, .irow.hl { background: rgba(40, 52, 84, 0.75); }
+  .irow i { width: 7px; height: 7px; border-radius: 50%; }
+  .irow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .irow .bar { height: 3px; border-radius: 2px; background: rgba(140, 160, 210, 0.13); position: relative; overflow: hidden; }
+  .irow .bar b { position: absolute; left: 0; top: 0; bottom: 0; background: #56627f; }
+  .irow .d { text-align: right; color: var(--dim); font-size: 11px; }
+
+  /* bottom: where today's energy went */
+  #energy { position: fixed; left: 16px; right: 16px; bottom: 14px; }
+  #energy .top { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); margin-bottom: 5px; }
+  #strip { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: rgba(120, 150, 210, 0.1); }
+  #strip i { height: 100%; border-right: 1px solid var(--bg); transition: flex-grow 0.8s; cursor: pointer; }
+  #strip i:hover, #strip i.hl { filter: brightness(1.5); }
+  #strip-labels { position: relative; height: 16px; margin-top: 4px; font-size: 11px; }
+  #strip-labels span { position: absolute; white-space: nowrap; color: #b9c4e0; transform: translateX(-50%); }
+  #strip-labels span b { color: var(--energy); font-weight: 600; margin-left: 4px; }
+
+  /* hover card */
+  #tip {
+    position: fixed; z-index: 10; width: 270px; pointer-events: none;
+    background: rgba(9, 13, 25, 0.94); border: 1px solid var(--line); border-top: 2px solid var(--c, var(--idle));
+    border-radius: 10px; padding: 10px 12px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  }
+  #tip h3 { margin: 0; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
+  #tip h3 em { font-style: normal; font-size: 11px; color: var(--c); font-weight: 600; white-space: nowrap; }
+  #tip .ttl { color: var(--dim); font-size: 11px; margin: 2px 0 8px; }
+  #tip .now { font-size: 12px; margin-bottom: 8px; }
+  #tip .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; font-size: 11px; color: var(--dim); }
+  #tip .grid b { display: block; color: var(--text); font-size: 13px; }
+  #tip .recap { margin-top: 8px; font-size: 11px; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* legend */
+  #help { position: fixed; right: 16px; bottom: 60px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--dim); font-size: 14px; cursor: pointer; }
+  #legend { position: fixed; right: 16px; bottom: 98px; background: rgba(9, 13, 25, 0.94); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 12px; line-height: 1.9; }
+  #legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  #legend hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--dim); letter-spacing: 0.3em; pointer-events: none; transition: opacity 0.6s; }
+
+  #loading[hidden] { display: none; }
+
+  /* alerts */
+  #bell {
+    pointer-events: auto; width: 36px; height: 36px; border-radius: 50%; font-size: 16px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); transition: opacity 0.2s;
+  }
+  #bell.off { opacity: 0.45; }
+  #mode {
+    pointer-events: auto; height: 30px; padding: 0 12px; border-radius: 15px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--dim); font-weight: 700; font-size: 11px; letter-spacing: 0.12em;
+  }
+  #mode:hover { color: var(--text); border-color: var(--wait); }
+  #bell.locked { border-color: var(--wait); animation: beat 1.2s infinite; }
+  #toasts { position: fixed; top: 84px; right: 16px; width: 300px; display: flex; flex-direction: column; gap: 8px; z-index: 20; }
+  .toast {
+    background: rgba(7, 22, 34, 0.95); border: 1px solid rgba(63, 224, 255, 0.45); border-left: 3px solid var(--wait);
+    border-radius: 10px; padding: 10px 12px; cursor: pointer; box-shadow: 0 0 30px -6px rgba(63, 224, 255, 0.55);
+    animation: toast-in 0.35s ease-out; transition: opacity 0.5s, transform 0.5s;
+  }
+  .toast.out { opacity: 0; transform: translateX(24px); }
+  .toast b { color: var(--wait); }
+  .toast span { color: var(--dim); font-size: 11px; margin-left: 6px; }
+  .toast p { margin: 4px 0 0; font-size: 12px; color: #c9d3ee; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(30px); } }
+
+  @media (max-width: 900px) {
+    #now { display: none; }
+    #hud-left .counts { display: none; }
+  }
+  #grip { display: none; }
+  @media (hover: none) { .desk { display: none; } }
+  @media (hover: hover) { .touch { display: none; } }
+
+  /* phones: HUD in two rows on top, the list as a sheet along the bottom, city in between */
+  @media (max-width: 600px) {
+    :root { --top: env(safe-area-inset-top, 0px); }
+    body { --sheet: 42vh; }
+    body.sheet-min { --sheet: 92px; }
+    #clock { display: none; }
+    #hud-left { left: 14px; top: calc(12px + var(--top)); gap: 12px; }
+    #hud-left .counts { display: flex; gap: 10px; }
+    #hud-right { left: 12px; right: 12px; top: calc(42px + var(--top)); gap: 10px; }
+    #bell { margin-right: auto; }
+    #help { top: calc(8px + var(--top)); right: 12px; bottom: auto; }
+    #legend { top: calc(106px + var(--top)); left: 12px; right: 12px; bottom: auto; z-index: 30; }
+    #now {
+      display: flex; top: auto; left: 0; right: 0; bottom: 0; width: auto; height: var(--sheet);
+      padding: 22px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+      background: rgba(7, 11, 22, 0.9); border-top: 1px solid var(--line); border-radius: 18px 18px 0 0;
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      transition: height 0.3s; overscroll-behavior: contain;
+    }
+    #grip {
+      display: block; position: fixed; z-index: 5; left: 50%; bottom: calc(var(--sheet) - 22px); width: 120px; height: 22px;
+      transform: translateX(-50%); transition: bottom 0.3s; cursor: pointer;
+    }
+    #grip::after { content: ""; position: absolute; left: 42px; right: 42px; top: 8px; height: 5px; border-radius: 3px; background: rgba(150, 170, 220, 0.4); }
+    #energy { left: 14px; right: 14px; bottom: calc(var(--sheet) + 8px); transition: bottom 0.3s; }
+    #toasts { top: calc(104px + var(--top)); left: 12px; right: 12px; width: auto; }
+    /* the info card covers the list, so the building it describes stays in view */
+    #tip { left: 12px !important; right: 12px; top: auto !important; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: auto; pointer-events: auto; z-index: 6; background: #090d19; }
+    .card:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="city"></canvas>
+<canvas id="labels"></canvas>
+
+<header id="hud-left">
+  <div class="brand"><i></i>CLAUDE 戰情</div>
+  <div id="clock" class="num">--:--</div>
+  <div class="counts num">
+    <span style="--c: var(--work)" title="工作中" id="n-work">0</span>
+    <span style="--c: var(--wait)" title="等你回覆" id="n-wait">0</span>
+    <span style="--c: var(--idle)" title="閒置" id="n-idle">0</span>
+  </div>
+  <div id="demo" hidden>示範資料</div>
+</header>
+
+<aside id="hud-right">
+  <button id="mode" title="切換 2D／3D">2D</button>
+  <button id="bell" title="提醒">🔔</button>
+  <div class="gauge" id="g-cpu"><svg width="50" height="50"><circle cx="25" cy="25" r="21" fill="none" stroke="rgba(120,150,210,.15)" stroke-width="4"/><circle class="arc" cx="25" cy="25" r="21" fill="none" stroke-width="4" stroke-linecap="round" stroke-dasharray="0 999"/></svg><div class="v num">0</div><div class="k">CPU</div></div>
+  <div class="gauge" id="g-mem"><svg width="50" height="50"><circle cx="25" cy="25" r="21" fill="none" stroke="rgba(120,150,210,.15)" stroke-width="4"/><circle class="arc" cx="25" cy="25" r="21" fill="none" stroke-width="4" stroke-linecap="round" stroke-dasharray="0 999"/></svg><div class="v num">0</div><div class="k">MEM</div></div>
+  <div class="bolt"><b class="num" id="e-total">0</b><span>⚡ 今日耗能</span></div>
+</aside>
+
+<section id="now"></section>
+<div id="grip" title="展開／收起清單"></div>
+
+<footer id="energy">
+  <div class="top"><span>⚡ 今日能量去哪了</span><span id="e-note"></span></div>
+  <div id="strip"></div>
+  <div id="strip-labels"></div>
+</footer>
+
+<div id="tip" hidden></div>
+<div id="toasts"></div>
+
+<button id="help" title="圖例">?</button>
+<div id="legend" hidden>
+  <div><span class="sw" style="background:var(--work)"></span>工作中　<span class="sw" style="background:var(--wait)"></span>等你回覆　<span class="sw" style="background:var(--idle)"></span>閒置</div>
+  <hr>
+  <div>🏙️ 大樓越高 = 今天耗能越多</div>
+  <div>💨 煙囪冒煙 = 正在吃本機 CPU</div>
+  <div>⚡ 電線光點 = 正在消耗 token</div>
+  <div>🌙 燈越暗 = 閒置越久</div>
+  <hr>
+  <div>⚙️ 跑指令　🏗️ 改檔案　🔦 讀取搜尋</div>
+  <div>📡 上網　🛸 派分身　💭 思考　🔌 外掛工具</div>
+  <hr>
+  <div>🏭 城市邊緣的工廠 = 其他吃 CPU 的 App</div>
+  <div>⚛️ 中央電廠 = 這台 Mac（核心顏色 = CPU，水位 = 記憶體）</div>
+  <hr>
+  <div class="desk">🖱 拖曳旋轉・滾輪縮放・點大樓飛過去・雙擊回全景</div>
+  <div class="touch">👆 單指旋轉・雙指縮放・點大樓看細節・點資訊卡回全景</div>
+  <hr>
+  <div>🔔 做完等你時：叮咚＋通知＋大樓亮光柱</div>
+</div>
+
+<div id="loading">城市啟動中…</div>
+
+<script src="shared.js"></script>
+</body>
+</html>
